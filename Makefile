@@ -20,7 +20,7 @@ test: generate fmt vet manifests
 	go test ./... -coverprofile cover.out
 
 build: generate fmt vet
-	@go install ./cmd/secret-replication-controller
+	@go install -mod=vendor ./cmd/secret-replication-controller
 
 # Generate manifests e.g. CRD, RBAC etc.
 manifests: controller-gen
