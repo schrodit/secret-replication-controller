@@ -52,7 +52,6 @@ func (o *options) run(ctx context.Context) error {
 		LeaderElection:     o.enableLeaderElection,
 		LeaderElectionID:   "7d6ea2a1.schrodit.tech",
 		SyncPeriod:         &o.resyncPeriod,
-		Namespace:          "qa",
 	})
 	if err != nil {
 		return err

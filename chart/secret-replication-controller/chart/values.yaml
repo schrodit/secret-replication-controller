@@ -1,0 +1,17 @@
+replicaCount: 1
+
+image:
+  repository: schrodit/secret-replication-controller
+  tag: 0.1.0
+  pullPolicy: IfNotPresent
+
+verbosity: 2
+
+resources:
+  requests:
+   cpu: 100m
+   memory: 64Mi
+  limits:
+   cpu: 200m
+   memory: 128Mi
+
