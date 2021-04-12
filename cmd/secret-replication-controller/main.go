@@ -13,11 +13,7 @@ import (
 
 func main() {
 
-	stopCh := ctrl.SetupSignalHandler()
-	ctx := &stopChContext{
-		parent: context.Background(),
-		stopCh: stopCh,
-	}
+	ctx := ctrl.SetupSignalHandler()
 
 	cmd := app.NewSecretReplicationControllerCmd(ctx)
 	if err := cmd.Execute(); err != nil {

@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	controller "github.com/schrodit/secret-replication-controller/pkg/controllers/secret"
+	ingressctrl "github.com/schrodit/secret-replication-controller/pkg/controllers/ingress"
+	secretctrl "github.com/schrodit/secret-replication-controller/pkg/controllers/secret"
 	"github.com/spf13/cobra"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -57,9 +58,12 @@ func (o *options) run(ctx context.Context) error {
 		return err
 	}
 
-	if err := controller.AddToMgr(o.log, mgr); err != nil {
+	if err := secretctrl.AddToMgr(o.log, mgr); err != nil {
+		return err
+	}
+	if err := ingressctrl.AddToMgr(o.log, mgr); err != nil {
 		return err
 	}
 
-	return mgr.Start(ctx.Done())
+	return mgr.Start(ctx)
 }

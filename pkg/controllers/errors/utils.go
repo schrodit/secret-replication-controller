@@ -39,6 +39,7 @@ func ReportErrors(ctx context.Context, log logr.Logger, client ctrlclient.Client
 		// todo: support wrapped errors
 		intErr, ok := err.(Error)
 		if !ok {
+			reportErrs = append(reportErrs, err)
 			log.Error(err, "")
 			continue
 		}

@@ -1,4 +1,4 @@
-package controller
+package secretctrl
 
 import (
 	"github.com/go-logr/logr"
@@ -6,6 +6,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 type secretController struct {
@@ -14,20 +15,12 @@ type secretController struct {
 	scheme *runtime.Scheme
 }
 
-func (c *secretController) InjectClient(client ctrlclient.Client) error {
-	c.client = client
-	return nil
-}
-
-func (c *secretController) InjectScheme(s *runtime.Scheme) error {
-	c.scheme = s
-	return nil
-}
-
 // AddToMgr adds the secrets reconiler to the given manager
-func AddToMgr(log logr.Logger, mgr ctrl.Manager) error {
+func AddToMgr(log logr.Logger, mgr manager.Manager) error {
 	c := &secretController{
-		log: log,
+		log:    log,
+		client: mgr.GetClient(),
+		scheme: mgr.GetScheme(),
 	}
 	return ctrl.NewControllerManagedBy(mgr).For(&corev1.Secret{}).Complete(c)
 }

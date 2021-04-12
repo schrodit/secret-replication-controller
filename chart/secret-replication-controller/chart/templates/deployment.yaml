@@ -24,6 +24,11 @@ spec:
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         args:
         - -v={{ .Values.verbosity }}
+        {{- if .Values.replication.prefixes }}
+        {{- range .Values.replication.prefixes }}
+        - prefix={{ . | quote }}
+        {{- end }}
+        {{- end }}
         resources:
           {{- toYaml .Values.resources | nindent 10 }}
       serviceAccountName: {{ .Release.Name }}

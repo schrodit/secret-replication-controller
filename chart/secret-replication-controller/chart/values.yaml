@@ -1,3 +1,7 @@
+
+replication:
+  # prefixes: []
+
 replicaCount: 1
 
 image:
