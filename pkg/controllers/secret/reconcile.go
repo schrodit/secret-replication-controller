@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/go-logr/logr"
 	"github.com/schrodit/secret-replication-controller/pkg/apis/core/v1alpha1"
 	"github.com/schrodit/secret-replication-controller/pkg/apis/core/v1alpha1/helper"
 	"github.com/schrodit/secret-replication-controller/pkg/controllers/errors"
@@ -17,6 +18,7 @@ import (
 )
 
 func (c *secretController) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
+	ctx = logr.NewContext(ctx, c.log.WithValues("name", req.Name, "namespace", req.Namespace))
 	secret := &corev1.Secret{}
 	if err := c.client.Get(ctx, req.NamespacedName, secret); err != nil {
 		return reconcile.Result{}, err
@@ -29,11 +31,12 @@ func (c *secretController) Reconcile(ctx context.Context, req reconcile.Request)
 }
 
 func (c *secretController) reconcile(ctx context.Context, secret *corev1.Secret) error {
-	c.log.V(10).Info("check replication for secret", "name", secret.Name, "namespace", secret.Namespace)
+	log := logr.FromContextOrDiscard(ctx)
+	log.V(10).Info("check replication for secret")
 	namespacesVal, hasNamespacesAnn := helper.GetAnnotation(secret, v1alpha1.SecretReplicationNamespacesAnnotations)
 	_, hasAllNamespacesAnn := helper.GetAnnotation(secret, v1alpha1.SecretReplicationAllNamespacesAnnotations)
 	if !hasNamespacesAnn && !hasAllNamespacesAnn {
-		c.log.V(10).Info("secret not applicable for replication", "name", secret.Name, "namespace", secret.Namespace)
+		log.V(10).Info("secret not applicable for replication")
 		return nil
 	}
 
@@ -49,7 +52,7 @@ func (c *secretController) reconcile(ctx context.Context, secret *corev1.Secret)
 		var err error
 		namespaces, err = c.parseNamespaces(ctx, secret, namespacesVal)
 		if err != nil {
-			return errors.ReportErrors(ctx, c.log, c.client, err)
+			return c.Report(ctx, err)
 		}
 	}
 
@@ -65,7 +68,7 @@ func (c *secretController) reconcile(ctx context.Context, secret *corev1.Secret)
 		}
 	}
 
-	return errors.ReportErrors(ctx, c.log, c.client, allErrs)
+	return c.Report(ctx, allErrs)
 }
 
 func (c *secretController) parseNamespaces(ctx context.Context, secret *corev1.Secret, namespaces string) ([]string, error) {

@@ -7,9 +7,7 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"k8s.io/client-go/tools/record"
 )
 
 // AggregateMultiError aggregates multiple errors.
@@ -28,7 +26,7 @@ func AggregateMultiError(errs []error) error {
 
 // ReportErrors reports all errors of a known internal type as events.
 // unknown errors are logged.
-func ReportErrors(ctx context.Context, log logr.Logger, client ctrlclient.Client, err error) error {
+func ReportErrors(ctx context.Context, log logr.Logger, eventRecorder record.EventRecorder, err error) error {
 	allErrs := ErrorList{err}
 	if errs, ok := err.(ErrorList); ok {
 		allErrs = errs
@@ -43,41 +41,29 @@ func ReportErrors(ctx context.Context, log logr.Logger, client ctrlclient.Client
 			log.Error(err, "")
 			continue
 		}
-
-		event := &corev1.Event{}
-		event.GenerateName = "secret-rep-"
-		event.InvolvedObject = involvedObject(intErr.Src)
+		eventRecorder.Event(intErr.Src, corev1.EventTypeWarning, string(intErr.Reason), intErr.Msg)
 		if intErr.Dst != nil {
-			event.InvolvedObject = involvedObject(intErr.Dst)
-		}
-		event.Namespace = event.InvolvedObject.Namespace
-
-		event.Reason = string(intErr.Reason)
-		event.Message = intErr.Error()
-		event.EventTime = metav1.NowMicro()
-		event.ReportingController = "schrodit.tech/secret-replication-controller"
-		event.ReportingInstance = "dummy"
-		event.Action = "Reconcile"
-		event.Type = "Warning"
-
-		if err := client.Create(ctx, event); err != nil {
-			reportErrs = append(reportErrs, intErr, err)
+			eventRecorder.Event(intErr.Dst, corev1.EventTypeWarning, string(intErr.Reason), intErr.Msg)
 		}
 	}
 
 	return reportErrs.AggregateError()
 }
 
-func involvedObject(obj runtime.Object) corev1.ObjectReference {
-	ref := corev1.ObjectReference{}
-	ref.APIVersion = obj.GetObjectKind().GroupVersionKind().GroupVersion().String()
-	ref.Kind = obj.GetObjectKind().GroupVersionKind().Kind
+// ErrorReporter is a struct that reports aggreagted errors.
+// Is basically a simple wrapper for ReportErrors.
+type ErrorReporter struct {
+	recorder record.EventRecorder
+}
 
-	if acc, ok := obj.(metav1.Object); ok {
-		ref.Namespace = acc.GetNamespace()
-		ref.Name = acc.GetName()
-		ref.UID = acc.GetUID()
-		ref.ResourceVersion = acc.GetResourceVersion()
+// NewErrorReporter creates a new error reporter
+func NewErrorReporter(recorder record.EventRecorder) *ErrorReporter {
+	return &ErrorReporter{
+		recorder: recorder,
 	}
-	return ref
+}
+
+func (er ErrorReporter) Report(ctx context.Context, err error) error {
+	log := logr.FromContextOrDiscard(ctx)
+	return ReportErrors(ctx, log, er.recorder, err)
 }

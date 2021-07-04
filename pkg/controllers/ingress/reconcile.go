@@ -10,6 +10,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/go-logr/logr"
 	"github.com/schrodit/secret-replication-controller/pkg/apis/core/v1alpha1"
 	"github.com/schrodit/secret-replication-controller/pkg/apis/core/v1alpha1/helper"
 	interrors "github.com/schrodit/secret-replication-controller/pkg/controllers/errors"
@@ -17,6 +18,7 @@ import (
 )
 
 func (c *IngressController) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
+	ctx = logr.NewContext(ctx, c.log.WithValues("name", req.Name, "namespace", req.Namespace))
 	ingress := &networkingv1beta1.Ingress{}
 	if err := c.client.Get(ctx, req.NamespacedName, ingress); err != nil {
 		return reconcile.Result{}, err
@@ -29,23 +31,24 @@ func (c *IngressController) Reconcile(ctx context.Context, req reconcile.Request
 }
 
 func (c *IngressController) reconcile(ctx context.Context, ingress *networkingv1beta1.Ingress) error {
-	c.log.V(10).Info("check replication for ingress", "name", ingress.Name, "namespace", ingress.Namespace)
+	log := logr.FromContextOrDiscard(ctx)
+	log.V(10).Info("check replication for ingress")
 	srcNamespace, ok := helper.GetAnnotation(ingress, v1alpha1.SecretReplicationFromNamespaceAnnotations)
 	if !ok {
-		c.log.V(10).Info("ingress not applicable for replication", "name", ingress.Name, "namespace", ingress.Namespace)
+		log.V(10).Info("ingress not applicable for replication")
 		return nil
 	}
 
 	// get all secrets from the ingress
 	usedSecrets := getSecretsFromIngress(ingress)
 	if len(usedSecrets) == 0 {
-		c.log.V(10).Info("no secrets used by ingress", "name", ingress.Name, "namespace", ingress.Namespace)
+		log.V(10).Info("no secrets used by ingress")
 		return nil
 	}
 
 	// check if defined namespace exists
 	if err := c.client.Get(ctx, client.ObjectKey{Name: srcNamespace}, &corev1.Namespace{}); err != nil {
-		return interrors.ReportErrors(ctx, c.log, c.client, fmt.Errorf("namespace %q not found", srcNamespace))
+		return c.Report(ctx, fmt.Errorf("namespace %q not found", srcNamespace))
 	}
 	targetNamespace := ingress.Namespace
 
@@ -64,7 +67,7 @@ func (c *IngressController) reconcile(ctx context.Context, ingress *networkingv1
 		}
 	}
 
-	return interrors.ReportErrors(ctx, c.log, c.client, allErrs)
+	return c.Report(ctx, allErrs)
 }
 
 // getSecretsFromIngress returns all used secrets for the ingress.

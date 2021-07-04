@@ -1,4 +1,6 @@
 
+install-requirements:
+	@go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 
 revendor:
 	@go mod vendor
@@ -9,7 +11,7 @@ generate:
 
 # Run tests
 test:
-	@go test ./... -coverprofile cover.out
+	@./hack/test.sh
 
 build: generate fmt vet
 	@go install -mod=vendor ./cmd/secret-replication-controller

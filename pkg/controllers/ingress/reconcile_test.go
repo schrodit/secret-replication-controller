@@ -12,6 +12,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1beta1 "k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -34,7 +35,7 @@ var _ = Describe("controller", func() {
 		Expect(client.Create(context.TODO(), secret)).To(Succeed())
 		namespaces = make([]string, 0)
 
-		ctrl = ingressctrl.New(testing.NullLogger{}, client)
+		ctrl = ingressctrl.New(testing.NullLogger{}, client, record.NewFakeRecorder(1024))
 	})
 
 	AfterEach(func() {

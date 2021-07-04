@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/go-logr/logr/testing"
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/schrodit/secret-replication-controller/pkg/apis/core/v1alpha1"
+	"github.com/schrodit/secret-replication-controller/pkg/controllers/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -34,8 +36,9 @@ var _ = Describe("controller", func() {
 		namespaces = make([]string, 0)
 
 		ctrl = &secretController{
-			log:    testing.NullLogger{},
-			client: client,
+			log:           logr.Discard(),
+			client:        client,
+			ErrorReporter: errors.NewErrorReporter(record.NewFakeRecorder(1024)),
 		}
 	})
 
