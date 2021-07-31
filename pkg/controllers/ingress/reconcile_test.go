@@ -2,9 +2,8 @@ package ingressctrl_test
 
 import (
 	"context"
-	"strconv"
 
-	"github.com/go-logr/logr/testing"
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/schrodit/secret-replication-controller/pkg/apis/core/v1alpha1"
@@ -35,7 +34,7 @@ var _ = Describe("controller", func() {
 		Expect(client.Create(context.TODO(), secret)).To(Succeed())
 		namespaces = make([]string, 0)
 
-		ctrl = ingressctrl.New(testing.NullLogger{}, client, record.NewFakeRecorder(1024))
+		ctrl = ingressctrl.New(logr.Discard(), client, record.NewFakeRecorder(1024))
 	})
 
 	AfterEach(func() {
@@ -81,7 +80,8 @@ var _ = Describe("controller", func() {
 		Expect(client.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: ns.Name}, newSecret)).To(Succeed())
 
 		Expect(newSecret.Data).To(Equal(secret.Data))
-		Expect(newSecret.Annotations).To(HaveKeyWithValue(v1alpha1.SecretReplicationLasObservedGenerationAnnotation, strconv.Itoa(int(secret.Generation))))
+		Expect(newSecret.Annotations).To(HaveKey(v1alpha1.SecretReplicationLastObservedHashAnnotation))
+		Expect(newSecret.Annotations[v1alpha1.SecretReplicationLastObservedHashAnnotation]).ToNot(Equal(""))
 	})
 
 	It("should create a replicated secret in one namespace with a custom prefix", func() {
@@ -121,52 +121,51 @@ var _ = Describe("controller", func() {
 		Expect(client.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: ns.Name}, newSecret)).To(Succeed())
 
 		Expect(newSecret.Data).To(Equal(secret.Data))
-		Expect(newSecret.Annotations).To(HaveKeyWithValue(v1alpha1.SecretReplicationLasObservedGenerationAnnotation, strconv.Itoa(int(secret.Generation))))
+		Expect(newSecret.Annotations).To(HaveKey(v1alpha1.SecretReplicationLastObservedHashAnnotation))
+		Expect(newSecret.Annotations[v1alpha1.SecretReplicationLastObservedHashAnnotation]).ToNot(Equal(""))
 	})
 
-	// need to fix secret generation update in envtest
-	// It("should update an existing secret when data of the source is updated", func() {
-	// 	ctx := context.Background()
-	// 	defer ctx.Done()
+	It("should update an existing secret when data of the source is updated", func() {
+		ctx := context.Background()
+		defer ctx.Done()
 
-	// 	ns := &corev1.Namespace{}
-	// 	ns.GenerateName = "e2e-"
-	// 	Expect(client.Create(ctx, ns))
-	// 	namespaces = append(namespaces, ns.Name)
+		ns := &corev1.Namespace{}
+		ns.GenerateName = "e2e-"
+		Expect(client.Create(ctx, ns))
+		namespaces = append(namespaces, ns.Name)
 
-	// 	ingress := defaultIngress()
-	// 	ingress.GenerateName = "e2e-"
-	// 	ingress.Namespace = ns.Name
-	// 	ingress.Annotations = map[string]string{
-	// 		v1alpha1.SecretReplicationFromNamespaceAnnotation: secret.Namespace,
-	// 	}
-	// 	ingress.Spec.TLS = []networkingv1beta1.IngressTLS{
-	// 		{
-	// 			Hosts:      []string{"example.com"},
-	// 			SecretName: secret.Name,
-	// 		},
-	// 	}
+		ingress := defaultIngress()
+		ingress.GenerateName = "e2e-"
+		ingress.Namespace = ns.Name
+		ingress.Annotations = map[string]string{
+			v1alpha1.SecretReplicationFromNamespaceAnnotation: secret.Namespace,
+		}
+		ingress.Spec.TLS = []networkingv1beta1.IngressTLS{
+			{
+				Hosts:      []string{"example.com"},
+				SecretName: secret.Name,
+			},
+		}
 
-	// 	Expect(client.Create(ctx, ingress)).To(Succeed())
+		Expect(client.Create(ctx, ingress)).To(Succeed())
 
-	// 	_, err := ctrl.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: ingress.Name, Namespace: ingress.Namespace}})
-	// 	Expect(err).ToNot(HaveOccurred())
+		_, err := ctrl.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: ingress.Name, Namespace: ingress.Namespace}})
+		Expect(err).ToNot(HaveOccurred())
 
-	// 	newSecret := &corev1.Secret{}
-	// 	Expect(client.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: ns.Name}, newSecret)).To(Succeed())
+		newSecret := &corev1.Secret{}
+		Expect(client.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: ns.Name}, newSecret)).To(Succeed())
 
-	// 	secret.Generation = secret.Generation + 1
-	// 	secret.Data = map[string][]byte{
-	// 		"other": []byte("test"),
-	// 	}
-	// 	Expect(client.Update(ctx, secret)).To(Succeed())
+		secret.Data = map[string][]byte{
+			"other": []byte("test"),
+		}
+		Expect(client.Update(ctx, secret)).To(Succeed())
 
-	// 	_, err = ctrl.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: ingress.Name, Namespace: ingress.Namespace}})
-	// 	Expect(err).ToNot(HaveOccurred())
+		_, err = ctrl.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: ingress.Name, Namespace: ingress.Namespace}})
+		Expect(err).ToNot(HaveOccurred())
 
-	// 	Expect(client.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: ns.Name}, newSecret)).To(Succeed())
-	// 	Expect(newSecret.Data["other"]).To(Equal(secret.Data))
-	// })
+		Expect(client.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: ns.Name}, newSecret)).To(Succeed())
+		Expect(newSecret.Data).To(Equal(secret.Data))
+	})
 
 })
 

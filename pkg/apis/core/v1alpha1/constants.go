@@ -40,8 +40,8 @@ var (
 // SecretReplicationReplicaOfAnnotation is the name of the annotation that defines the source resource of the current resource.
 const SecretReplicationReplicaOfAnnotation = "replication.schrodit.tech/replicaOf"
 
-// SecretReplicationLasObservedGenerationAnnotation is the name of the annotation that defines the last observed generation of the replicating secret.
-const SecretReplicationLasObservedGenerationAnnotation = "replication.schrodit.tech/lastObservedGeneration"
+// SecretReplicationLastHashAnnotation is the name of the annotation that defines the last observed hash of the replicating secret.
+const SecretReplicationLastObservedHashAnnotation = "replication.schrodit.tech/lastObservedHash"
 
 const Separator = "/"
 

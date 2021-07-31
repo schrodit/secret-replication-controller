@@ -2,8 +2,10 @@ package replicator
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
-	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -46,14 +48,19 @@ func (r *Replicator) ReplicateTo(ctx context.Context, namespace string) error {
 			}
 		}
 
+		srcHash, err := secretHash(r.secret)
+		if err != nil {
+			return fmt.Errorf("unable to hash data of source secret: %w", err)
+		}
+
 		// secret is not created yet so lets create it
 		repSecret := &corev1.Secret{}
 		repSecret.Name = key.Name
 		repSecret.Namespace = key.Namespace
 		repSecret.Data = r.secret.Data
 		repSecret.Annotations = map[string]string{
-			v1alpha1.SecretReplicationLasObservedGenerationAnnotation: strconv.Itoa(int(r.secret.Generation)),
-			v1alpha1.SecretReplicationReplicaOfAnnotation:             types.NamespacedName{Name: r.secret.Name, Namespace: r.secret.Namespace}.String(),
+			v1alpha1.SecretReplicationLastObservedHashAnnotation: srcHash,
+			v1alpha1.SecretReplicationReplicaOfAnnotation:        types.NamespacedName{Name: r.secret.Name, Namespace: r.secret.Namespace}.String(),
 		}
 
 		if err := r.client.Create(ctx, repSecret); err != nil {
@@ -67,14 +74,16 @@ func (r *Replicator) ReplicateTo(ctx context.Context, namespace string) error {
 		return nil
 	}
 
-	if !IsApplicableForUpdate(r.secret, repSecret, false) {
+	update, srcHash, err := IsApplicableForUpdate(r.secret, repSecret, false)
+	if err != nil {
+		return err
+	}
+	if !update {
 		return nil
 	}
 
 	repSecret.Data = r.secret.Data
-	repSecret.Annotations = map[string]string{
-		v1alpha1.SecretReplicationLasObservedGenerationAnnotation: strconv.Itoa(int(r.secret.Generation)),
-	}
+	metav1.SetMetaDataAnnotation(&repSecret.ObjectMeta, v1alpha1.SecretReplicationLastObservedHashAnnotation, srcHash)
 
 	if err := r.client.Update(ctx, repSecret); err != nil {
 		return errors.Error{
@@ -91,17 +100,39 @@ func (r *Replicator) ReplicateTo(ctx context.Context, namespace string) error {
 // IsApplicableForUpdate checks whether a resource is applicable for an update.
 // The destination resource is not overwritten if the replicaOf annotation does not matches the source resource.
 // Setting force also updates the destination resource if no replicaOf is set.
-func IsApplicableForUpdate(src, dst metav1.Object, force bool) bool {
-	// only update if the observed generation differ
-	if dst.GetAnnotations()[v1alpha1.SecretReplicationLasObservedGenerationAnnotation] == strconv.Itoa(int(src.GetGeneration())) {
-		return false
+// The function returns if the secret is applicated to be updasted, the new src hash and a optional error.
+// The source hash is only returned if the secret should be updated.
+func IsApplicableForUpdate(src, dst *corev1.Secret, force bool) (bool, string, error) {
+	lastObservedHash := dst.Annotations[v1alpha1.SecretReplicationLastObservedHashAnnotation]
+
+	srcHash, err := secretHash(src)
+	if err != nil {
+		return false, "", fmt.Errorf("unable to hash data of source secret: %w", err)
+	}
+
+	// only update if the observed hash differ
+	if lastObservedHash == srcHash {
+		return false, "", nil
 	}
 
 	// do not update if the secret is not controlled by the current secret
-	replicaOf, ok := dst.GetAnnotations()[v1alpha1.SecretReplicationReplicaOfAnnotation]
+	replicaOf, ok := dst.Annotations[v1alpha1.SecretReplicationReplicaOfAnnotation]
 	if !ok && force {
-		return true
+		return true, srcHash, nil
 	}
 
-	return types.NamespacedName{Name: src.GetName(), Namespace: src.GetNamespace()}.String() == replicaOf
+	return types.NamespacedName{Name: src.GetName(), Namespace: src.GetNamespace()}.String() == replicaOf, srcHash, nil
+}
+
+// secretHash creates a hash value of the data of the given secret.
+func secretHash(secret *corev1.Secret) (string, error) {
+	// create a hashable representation of the data using json
+	data, err := json.Marshal(secret.Data)
+	if err != nil {
+		return "", err
+	}
+
+	h := sha1.New()
+	_, _ = h.Write(data)
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
