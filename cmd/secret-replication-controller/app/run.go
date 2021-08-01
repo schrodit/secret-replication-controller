@@ -58,11 +58,16 @@ func (o *options) run(ctx context.Context) error {
 		return err
 	}
 
-	if err := secretctrl.AddToMgr(o.log, mgr); err != nil {
-		return err
+	if !o.disableSecretController {
+		if err := secretctrl.AddToMgr(o.log, mgr); err != nil {
+			return err
+		}
 	}
-	if err := ingressctrl.AddToMgr(o.log, mgr); err != nil {
-		return err
+
+	if !o.disableIngressController {
+		if err := ingressctrl.AddToMgr(o.log, mgr); err != nil {
+			return err
+		}
 	}
 
 	return mgr.Start(ctx)

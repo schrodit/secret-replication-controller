@@ -12,11 +12,13 @@ import (
 )
 
 type options struct {
-	metricsAddr          string
-	enableLeaderElection bool
-	resyncPeriod         time.Duration
-	logConfig            *logger.Config
-	alternativePrefixes  []string
+	metricsAddr              string
+	enableLeaderElection     bool
+	resyncPeriod             time.Duration
+	logConfig                *logger.Config
+	disableSecretController  bool
+	disableIngressController bool
+	alternativePrefixes      []string
 
 	log logr.Logger
 }
@@ -48,6 +50,8 @@ func (o *options) AddFlags(fs *pflag.FlagSet) {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	fs.DurationVar(&o.resyncPeriod, "resync-period", 10*time.Minute, "Resync interval for the cache if the controller")
+	fs.BoolVar(&o.disableSecretController, "disable-secret", false, "Disables the secret controller")
+	fs.BoolVar(&o.disableIngressController, "disable-ingress", false, "Disables the ingress controller")
 	fs.StringArrayVar(&o.alternativePrefixes, "prefix", []string{},
 		fmt.Sprintf("define alternate annotation prefixes. Defaults to %q", v1alpha1.DefaultAnnotationPrefix))
 
