@@ -12,6 +12,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	ctrlruntime "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -43,7 +45,6 @@ var _ = Describe("controller", func() {
 
 	AfterEach(func() {
 		ctx := context.Background()
-		defer ctx.Done()
 		Expect(client.Delete(ctx, secret)).To(Succeed())
 
 		for _, ns := range namespaces {
@@ -53,136 +54,197 @@ var _ = Describe("controller", func() {
 		}
 	})
 
-	It("should create a replicated secret in one namespace", func() {
-		ctx := context.Background()
-		defer ctx.Done()
+	Context("reconciler", func() {
+		It("should create a replicated secret in one namespace", func() {
+			ctx := context.Background()
 
-		By("create test namespace")
-		ns := &corev1.Namespace{}
-		ns.GenerateName = "e2e-"
-		Expect(client.Create(ctx, ns))
-		namespaces = append(namespaces, ns.Name)
+			By("create test namespace")
+			ns := &corev1.Namespace{}
+			ns.GenerateName = "e2e-"
+			Expect(client.Create(ctx, ns))
+			namespaces = append(namespaces, ns.Name)
 
-		secret.Annotations = map[string]string{
-			v1alpha1.SecretReplicationNamespacesAnnotation: ns.Name,
-		}
-		Expect(client.Update(ctx, secret)).To(Succeed())
+			secret.Annotations = map[string]string{
+				v1alpha1.SecretReplicationNamespacesAnnotation: ns.Name,
+			}
+			Expect(client.Update(ctx, secret)).To(Succeed())
 
-		_, err := ctrl.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace}})
-		Expect(err).ToNot(HaveOccurred())
+			_, err := ctrl.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace}})
+			Expect(err).ToNot(HaveOccurred())
 
-		newSecret := &corev1.Secret{}
-		Expect(client.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: ns.Name}, newSecret)).To(Succeed())
+			newSecret := &corev1.Secret{}
+			Expect(client.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: ns.Name}, newSecret)).To(Succeed())
 
-		Expect(newSecret.Data).To(Equal(secret.Data))
-		Expect(newSecret.Annotations).To(HaveKey(v1alpha1.SecretReplicationLastObservedHashAnnotation))
-		Expect(newSecret.Annotations[v1alpha1.SecretReplicationLastObservedHashAnnotation]).ToNot(Equal(""))
+			Expect(newSecret.Data).To(Equal(secret.Data))
+			Expect(newSecret.Annotations).To(HaveKey(v1alpha1.SecretReplicationLastObservedHashAnnotation))
+			Expect(newSecret.Annotations[v1alpha1.SecretReplicationLastObservedHashAnnotation]).ToNot(Equal(""))
+		})
+
+		It("should create a replicated secret in one namespace using a custom prefix", func() {
+			ctx := context.Background()
+
+			customPrefix := "some-pref"
+			v1alpha1.SecretReplicationNamespacesAnnotations.Add(customPrefix)
+			defer func() {
+				v1alpha1.SecretReplicationNamespacesAnnotations.Reset()
+			}()
+
+			ns := &corev1.Namespace{}
+			ns.GenerateName = "e2e-"
+			Expect(client.Create(ctx, ns))
+			namespaces = append(namespaces, ns.Name)
+
+			secret.Annotations = map[string]string{
+				"some-pref/namespaces": ns.Name,
+			}
+			Expect(client.Update(ctx, secret)).To(Succeed())
+
+			_, err := ctrl.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace}})
+			Expect(err).ToNot(HaveOccurred())
+
+			newSecret := &corev1.Secret{}
+			Expect(client.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: ns.Name}, newSecret)).To(Succeed())
+
+			Expect(newSecret.Annotations).To(HaveKey(v1alpha1.SecretReplicationLastObservedHashAnnotation))
+			Expect(newSecret.Annotations[v1alpha1.SecretReplicationLastObservedHashAnnotation]).ToNot(Equal(""))
+		})
+
+		It("should create a replicated secret in multiple namespaces", func() {
+			ctx := context.Background()
+
+			By("create test namespaces")
+			ns1 := &corev1.Namespace{}
+			ns1.GenerateName = "e2e-"
+			Expect(client.Create(ctx, ns1))
+			namespaces = append(namespaces, ns1.Name)
+
+			ns2 := &corev1.Namespace{}
+			ns2.GenerateName = "e2e-"
+			Expect(client.Create(ctx, ns2))
+			namespaces = append(namespaces, ns2.Name)
+
+			ns3 := &corev1.Namespace{}
+			ns3.GenerateName = "e2e-"
+			Expect(client.Create(ctx, ns3))
+			namespaces = append(namespaces, ns3.Name)
+
+			secret.Annotations = map[string]string{
+				v1alpha1.SecretReplicationNamespacesAnnotation: fmt.Sprintf("%s,%s,%s", ns1.Name, ns2.Name, ns3.Name),
+			}
+			Expect(client.Update(ctx, secret)).To(Succeed())
+
+			_, err := ctrl.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace}})
+			Expect(err).ToNot(HaveOccurred())
+
+			newSecret := &corev1.Secret{}
+			Expect(client.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: ns1.Name}, newSecret)).To(Succeed())
+
+			Expect(newSecret.Data).To(Equal(secret.Data))
+			Expect(newSecret.Annotations).To(HaveKey(v1alpha1.SecretReplicationLastObservedHashAnnotation))
+			Expect(newSecret.Annotations[v1alpha1.SecretReplicationLastObservedHashAnnotation]).ToNot(Equal(""))
+
+			Expect(client.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: ns2.Name}, newSecret)).To(Succeed())
+			Expect(newSecret.Annotations).To(HaveKey(v1alpha1.SecretReplicationLastObservedHashAnnotation))
+			Expect(newSecret.Annotations[v1alpha1.SecretReplicationLastObservedHashAnnotation]).ToNot(Equal(""))
+
+			Expect(client.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: ns3.Name}, newSecret)).To(Succeed())
+			Expect(newSecret.Annotations).To(HaveKey(v1alpha1.SecretReplicationLastObservedHashAnnotation))
+			Expect(newSecret.Annotations[v1alpha1.SecretReplicationLastObservedHashAnnotation]).ToNot(Equal(""))
+		})
+
+		It("should update an existing secret when data of the source is updated", func() {
+			ctx := context.Background()
+
+			By("create test namespace")
+			ns := &corev1.Namespace{}
+			ns.GenerateName = "e2e-"
+			Expect(client.Create(ctx, ns))
+			namespaces = append(namespaces, ns.Name)
+
+			secret.Annotations = map[string]string{
+				v1alpha1.SecretReplicationNamespacesAnnotation: ns.Name,
+			}
+			Expect(client.Update(ctx, secret)).To(Succeed())
+
+			_, err := ctrl.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace}})
+			Expect(err).ToNot(HaveOccurred())
+
+			newSecret := &corev1.Secret{}
+			Expect(client.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: ns.Name}, newSecret)).To(Succeed())
+			Expect(newSecret.Data).To(Equal(secret.Data))
+
+			secret.Data = nil
+			Expect(client.Update(ctx, secret)).To(Succeed())
+
+			_, err = ctrl.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace}})
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(client.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: ns.Name}, newSecret)).To(Succeed())
+			Expect(newSecret.Data).To(BeNil())
+		})
 	})
 
-	It("should create a replicated secret in one namespace using a custom prefix", func() {
-		ctx := context.Background()
-		defer ctx.Done()
+	Context("e2e", func() {
 
-		customPrefix := "some-pref"
-		v1alpha1.SecretReplicationNamespacesAnnotations.Add(customPrefix)
-		defer func() {
-			v1alpha1.SecretReplicationNamespacesAnnotations.Reset()
-		}()
+		var (
+			mgr    manager.Manager
+			ctx    context.Context
+			cancel context.CancelFunc
+		)
+		BeforeEach(func() {
+			var err error
+			mgr, err = manager.New(testenv.Config, manager.Options{
+				MetricsBindAddress:     "0",
+				HealthProbeBindAddress: "0",
+			})
+			Expect(err).ToNot(HaveOccurred())
 
-		ns := &corev1.Namespace{}
-		ns.GenerateName = "e2e-"
-		Expect(client.Create(ctx, ns))
-		namespaces = append(namespaces, ns.Name)
+			Expect(ctrlruntime.NewControllerManagedBy(mgr).For(&corev1.Secret{}).Complete(ctrl))
 
-		secret.Annotations = map[string]string{
-			"some-pref/namespaces": ns.Name,
-		}
-		Expect(client.Update(ctx, secret)).To(Succeed())
+			ctx, cancel = context.WithCancel(context.Background())
+			go func() {
+				Expect(mgr.Start(ctx)).ToNot(HaveOccurred())
+			}()
+		})
 
-		_, err := ctrl.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace}})
-		Expect(err).ToNot(HaveOccurred())
+		AfterEach(func() {
+			cancel()
+		})
 
-		newSecret := &corev1.Secret{}
-		Expect(client.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: ns.Name}, newSecret)).To(Succeed())
+		It("should update an existing secret when data of the source is updated", func() {
+			ctx := context.Background()
 
-		Expect(newSecret.Annotations).To(HaveKey(v1alpha1.SecretReplicationLastObservedHashAnnotation))
-		Expect(newSecret.Annotations[v1alpha1.SecretReplicationLastObservedHashAnnotation]).ToNot(Equal(""))
-	})
+			By("create test namespace")
+			ns := &corev1.Namespace{}
+			ns.GenerateName = "e2e-"
+			Expect(client.Create(ctx, ns))
+			namespaces = append(namespaces, ns.Name)
 
-	It("should create a replicated secret in multiple namespaces", func() {
-		ctx := context.Background()
-		defer ctx.Done()
+			secret.Annotations = map[string]string{
+				v1alpha1.SecretReplicationNamespacesAnnotation: ns.Name,
+			}
+			Expect(client.Update(ctx, secret)).To(Succeed())
 
-		By("create test namespaces")
-		ns1 := &corev1.Namespace{}
-		ns1.GenerateName = "e2e-"
-		Expect(client.Create(ctx, ns1))
-		namespaces = append(namespaces, ns1.Name)
+			Eventually(func() map[string][]byte {
+				newSecret := &corev1.Secret{}
+				if err := client.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: ns.Name}, newSecret); err != nil {
+					return newSecret.Data
+				}
+				return newSecret.Data
+			}).Should(Equal(secret.Data))
 
-		ns2 := &corev1.Namespace{}
-		ns2.GenerateName = "e2e-"
-		Expect(client.Create(ctx, ns2))
-		namespaces = append(namespaces, ns2.Name)
+			secret.Data = nil
+			Expect(client.Update(ctx, secret)).To(Succeed())
 
-		ns3 := &corev1.Namespace{}
-		ns3.GenerateName = "e2e-"
-		Expect(client.Create(ctx, ns3))
-		namespaces = append(namespaces, ns3.Name)
+			Eventually(func() map[string][]byte {
+				newSecret := &corev1.Secret{}
+				if err := client.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: ns.Name}, newSecret); err != nil {
+					return newSecret.Data
+				}
+				return newSecret.Data
+			}).Should(BeNil())
+		})
 
-		secret.Annotations = map[string]string{
-			v1alpha1.SecretReplicationNamespacesAnnotation: fmt.Sprintf("%s,%s,%s", ns1.Name, ns2.Name, ns3.Name),
-		}
-		Expect(client.Update(ctx, secret)).To(Succeed())
-
-		_, err := ctrl.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace}})
-		Expect(err).ToNot(HaveOccurred())
-
-		newSecret := &corev1.Secret{}
-		Expect(client.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: ns1.Name}, newSecret)).To(Succeed())
-
-		Expect(newSecret.Data).To(Equal(secret.Data))
-		Expect(newSecret.Annotations).To(HaveKey(v1alpha1.SecretReplicationLastObservedHashAnnotation))
-		Expect(newSecret.Annotations[v1alpha1.SecretReplicationLastObservedHashAnnotation]).ToNot(Equal(""))
-
-		Expect(client.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: ns2.Name}, newSecret)).To(Succeed())
-		Expect(newSecret.Annotations).To(HaveKey(v1alpha1.SecretReplicationLastObservedHashAnnotation))
-		Expect(newSecret.Annotations[v1alpha1.SecretReplicationLastObservedHashAnnotation]).ToNot(Equal(""))
-
-		Expect(client.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: ns3.Name}, newSecret)).To(Succeed())
-		Expect(newSecret.Annotations).To(HaveKey(v1alpha1.SecretReplicationLastObservedHashAnnotation))
-		Expect(newSecret.Annotations[v1alpha1.SecretReplicationLastObservedHashAnnotation]).ToNot(Equal(""))
-	})
-
-	It("should update an existing secret when data of the source is updated", func() {
-		ctx := context.Background()
-		defer ctx.Done()
-
-		By("create test namespace")
-		ns := &corev1.Namespace{}
-		ns.GenerateName = "e2e-"
-		Expect(client.Create(ctx, ns))
-		namespaces = append(namespaces, ns.Name)
-
-		secret.Annotations = map[string]string{
-			v1alpha1.SecretReplicationNamespacesAnnotation: ns.Name,
-		}
-		Expect(client.Update(ctx, secret)).To(Succeed())
-
-		_, err := ctrl.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace}})
-		Expect(err).ToNot(HaveOccurred())
-
-		newSecret := &corev1.Secret{}
-		Expect(client.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: ns.Name}, newSecret)).To(Succeed())
-		Expect(newSecret.Data).To(Equal(secret.Data))
-
-		secret.Data = nil
-		Expect(client.Update(ctx, secret)).To(Succeed())
-
-		_, err = ctrl.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace}})
-		Expect(err).ToNot(HaveOccurred())
-
-		Expect(client.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: ns.Name}, newSecret)).To(Succeed())
-		Expect(newSecret.Data).To(BeNil())
 	})
 
 })
