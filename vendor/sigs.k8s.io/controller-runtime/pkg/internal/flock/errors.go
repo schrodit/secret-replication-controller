@@ -1,5 +1,5 @@
 /*
-Copyright 2019 The logr Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,13 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package testing
+package flock
 
-import "github.com/go-logr/logr"
+import "errors"
 
-// NullLogger is a logr.Logger that does nothing.
-//
-// Deprecated: NullLogger is idenitcal to logr.DiscardLogger.  It is retained
-// for backwards compatibility, but new users should use logr.DiscardLogger
-// instead.
-type NullLogger = logr.DiscardLogger
+var (
+	// ErrAlreadyLocked is returned when the file is already locked.
+	ErrAlreadyLocked = errors.New("the file is already locked")
+)
