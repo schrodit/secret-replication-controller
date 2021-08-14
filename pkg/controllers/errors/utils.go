@@ -41,6 +41,7 @@ func ReportErrors(ctx context.Context, log logr.Logger, eventRecorder record.Eve
 			log.Error(err, "")
 			continue
 		}
+		log.Error(intErr.Err, intErr.Msg)
 		eventRecorder.Event(intErr.Src, corev1.EventTypeWarning, string(intErr.Reason), intErr.Msg)
 		if intErr.Dst != nil {
 			eventRecorder.Event(intErr.Dst, corev1.EventTypeWarning, string(intErr.Reason), intErr.Msg)

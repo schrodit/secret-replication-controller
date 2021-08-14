@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/go-logr/logr"
 	"github.com/schrodit/secret-replication-controller/pkg/apis/core/v1alpha1"
 	"github.com/schrodit/secret-replication-controller/pkg/controllers/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -31,6 +32,7 @@ func New(kubeClient client.Client, secret *corev1.Secret) *Replicator {
 
 // ReplicateTo replicates the secret to the given namespace.
 func (r *Replicator) ReplicateTo(ctx context.Context, namespace string) error {
+	log := logr.FromContextOrDiscard(ctx)
 	key := types.NamespacedName{
 		Name:      r.secret.Name,
 		Namespace: namespace,
@@ -47,6 +49,7 @@ func (r *Replicator) ReplicateTo(ctx context.Context, namespace string) error {
 				Err:    err,
 			}
 		}
+		log.V(3).Info("Secret in target namespace not found. Creating...", "target", namespace)
 
 		srcHash, err := secretHash(r.secret)
 		if err != nil {
@@ -67,7 +70,7 @@ func (r *Replicator) ReplicateTo(ctx context.Context, namespace string) error {
 			return errors.Error{
 				Src:    r.secret,
 				Reason: errors.CreateError,
-				Msg:    fmt.Sprintf("unable to create replicated secret in namespace %s", key.Namespace),
+				Msg:    fmt.Sprintf("unable to create replicated secret in namespace %s: %s", key.Namespace, err.Error()),
 				Err:    err,
 			}
 		}
@@ -81,6 +84,7 @@ func (r *Replicator) ReplicateTo(ctx context.Context, namespace string) error {
 	if !update {
 		return nil
 	}
+	log.V(3).Info("Secret out-of-date. Updating...")
 
 	repSecret.Data = r.secret.Data
 	metav1.SetMetaDataAnnotation(&repSecret.ObjectMeta, v1alpha1.SecretReplicationLastObservedHashAnnotation, srcHash)
